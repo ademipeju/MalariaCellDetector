@@ -3,5 +3,5 @@ numpy
 pandas
 opencv-python
 matplotlib
-tflite-runtime
 Pillow
+tflite-runtime
