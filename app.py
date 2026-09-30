@@ -58,13 +58,13 @@ if uploaded_file is not None:
         st.info(f"🔍 Confidence: **{confidence:.2f}%**")
         st.markdown("<small>Note: This tool uses a lightweight TFLite model trained on malaria cell images.</small>", unsafe_allow_html=True)
 
-       st.markdown(
+# Footer
+st.markdown(
     """
     <hr style='margin: 20px 0;'>
     <small>
-      <b>Developed by:</b> Department of Biochemistry Research Team<br>
-      <b>Contributors:</b> O.A. Ogunsola & Colleagues<br>
-      <i>Acknowledgments: Initial prototype conceived through training with Women in AI Nigeria.</i>
+      <b>Developers:</b> O.A. Ogunsola & Colleagues<br>
+      <b>Project:</b> Deep learning point-of-care malaria cell diagnostic tool
     </small>
     """,
     unsafe_allow_html=True,
