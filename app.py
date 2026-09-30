@@ -22,38 +22,31 @@ CLASS_NAMES = ["Parasitized", "Uninfected"]
 
 def is_valid_blood_smear(image_bgr: np.ndarray) -> bool:
     """
-    Multi-parameter optical gatekeeper:
-    1. Background luminance & contrast uniformity (brightfield microscopy).
-    2. Edge complexity check via Laplacian variance.
-    3. Giemsa/Wright stain hue & saturation clustering.
+    Validates segmented erythrocyte patches:
+    1. Accommodates segmented black background masks.
+    2. Ensures a prominent cellular body is detected.
+    3. Verifies Giemsa/Wright stain chromaticity within the cell region.
     """
-    # 1. Luminance & Uniformity
-    gray = cv.cvtColor(image_bgr, cv.COLOR_BGR2GRAY)
-    mean_lum = float(np.mean(gray))
-    std_lum = float(np.std(gray))
-
-    # Brightfield microscopy background bounds
-    if mean_lum < 100 or mean_lum > 245:
-        return False
-    if std_lum > 75:  # Blocks cluttered, textured natural scenes
-        return False
-
-    # 2. Edge / Texture Complexity
-    laplacian_var = float(cv.Laplacian(gray, cv.CV_64F).var())
-    if laplacian_var > 650 or laplacian_var < 5:
-        return False
-
-    # 3. HSV Color Stain Analysis
+    # Convert BGR to HSV
     hsv = cv.cvtColor(image_bgr, cv.COLOR_BGR2HSV)
-    h = hsv[:, :, 0]
-    s = hsv[:, :, 1]
+    h, s, v = cv.split(hsv)
 
-    # Giemsa/Wright stain (pink-to-purple hue window, moderate saturation)
-    stain_pixels = (h >= 120) & (h <= 170) & (s >= 25) & (s <= 200)
-    stain_ratio = float(np.count_nonzero(stain_pixels)) / float(image_bgr.shape[0] * image_bgr.shape[1])
+    # Foreground cell isolation (non-black pixels have v > 35)
+    cell_mask = v > 35
+    cell_pixel_count = int(np.count_nonzero(cell_mask))
+    total_pixels = int(image_bgr.shape[0] * image_bgr.shape[1])
 
-    # Isolated erythrocyte patch stained cellular bounds
-    if stain_ratio < 0.12 or stain_ratio > 0.85:
+    # Segmented cell must occupy between 15% and 98% of the image patch
+    cell_coverage = cell_pixel_count / total_pixels
+    if cell_coverage < 0.15 or cell_coverage > 0.98:
+        return False
+
+    # Check Giemsa pink-to-purple stain range (H in [115, 178], S >= 20) inside the segmented cell
+    stain_mask = (h >= 115) & (h <= 178) & (s >= 20) & cell_mask
+    stain_ratio_in_cell = float(np.count_nonzero(stain_mask)) / float(cell_pixel_count)
+
+    # Cellular body must contain at least 25% stained hue composition
+    if stain_ratio_in_cell < 0.25:
         return False
 
     return True
@@ -78,8 +71,7 @@ if uploaded_file is not None:
         if not is_valid_blood_smear(image):
             st.error(
                 "⚠️ **Input Rejected:** This image does not match the optical characteristics "
-                "of a Giemsa-stained microscopic blood smear (brightfield slide illumination and stained erythrocyte morphology). "
-                "Please upload a valid microscope cell image."
+                "of a Giemsa-stained microscopic blood smear patch. Please upload a valid erythrocyte patch."
             )
         else:
             # Preprocessing
@@ -87,7 +79,7 @@ if uploaded_file is not None:
             img = img.astype("float32") / 255.0
             img_array = np.expand_dims(img, axis=0)
 
-            # TFLite Inference
+            # Run TFLite inference
             interpreter.set_tensor(input_details[0]["index"], img_array)
             interpreter.invoke()
             prediction = float(interpreter.get_tensor(output_details[0]["index"])[0][0])
@@ -100,7 +92,7 @@ if uploaded_file is not None:
                 pred_class = CLASS_NAMES[1]
                 confidence = prediction * 100
 
-            # Output Cards
+            # Display results
             st.success(f"🧪 Prediction: **{pred_class}**")
             st.info(f"🔍 Confidence: **{confidence:.2f}%**")
             st.markdown("<small>Note: Classification performed via lightweight TFLite edge model.</small>", unsafe_allow_html=True)
