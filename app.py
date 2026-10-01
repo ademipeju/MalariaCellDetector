@@ -22,31 +22,43 @@ CLASS_NAMES = ["Parasitized", "Uninfected"]
 
 def is_valid_blood_smear(image_bgr: np.ndarray) -> bool:
     """
-    Validates segmented erythrocyte patches:
-    1. Accommodates segmented black background masks.
-    2. Ensures a prominent cellular body is detected.
-    3. Verifies Giemsa/Wright stain chromaticity within the cell region.
+    Robust 4-point gatekeeper for blood smear microscopy:
+    1. Rejects blank/dark images.
+    2. Checks Giemsa optical signature (Red > Green across cellular regions).
+    3. Laplacian texture variance: Rejects high-complexity natural photos.
+    4. Hue & Saturation clustering specific to Giemsa/Wright staining.
     """
-    # Convert BGR to HSV
+    h_img, w_img = image_bgr.shape[:2]
+    total_pixels = float(h_img * w_img)
+
+    gray = cv.cvtColor(image_bgr, cv.COLOR_BGR2GRAY)
     hsv = cv.cvtColor(image_bgr, cv.COLOR_BGR2HSV)
-    h, s, v = cv.split(hsv)
+    h, s, v = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
 
-    # Foreground cell isolation (non-black pixels have v > 35)
-    cell_mask = v > 35
-    cell_pixel_count = int(np.count_nonzero(cell_mask))
-    total_pixels = int(image_bgr.shape[0] * image_bgr.shape[1])
-
-    # Segmented cell must occupy between 15% and 98% of the image patch
-    cell_coverage = cell_pixel_count / total_pixels
-    if cell_coverage < 0.15 or cell_coverage > 0.98:
+    mean_brightness = float(np.mean(v))
+    if mean_brightness < 20 or mean_brightness > 248:
         return False
 
-    # Check Giemsa pink-to-purple stain range (H in [115, 178], S >= 20) inside the segmented cell
-    stain_mask = (h >= 115) & (h <= 178) & (s >= 20) & cell_mask
-    stain_ratio_in_cell = float(np.count_nonzero(stain_mask)) / float(cell_pixel_count)
+    # Texture complexity check: cuts out cluttered natural photos
+    lap_var = float(cv.Laplacian(gray, cv.CV_64F).var())
+    if lap_var > 750:
+        return False
 
-    # Cellular body must contain at least 25% stained hue composition
-    if stain_ratio_in_cell < 0.25:
+    # Separate cells from black background masks and white slide fields
+    non_bg_mask = (v >= 30) & ~((v > 235) & (s < 20))
+    cell_pixel_count = int(np.count_nonzero(non_bg_mask))
+
+    if cell_pixel_count / total_pixels < 0.10:
+        return False
+
+    # Giemsa stain signature: Red > Green in RGB, Hue in [118, 175], Saturation >= 25
+    b, g, r = image_bgr[:, :, 0], image_bgr[:, :, 1], image_bgr[:, :, 2]
+    giemsa_color_rule = (r.astype(int) > (g.astype(int) + 8))
+
+    valid_stain_mask = (h >= 118) & (h <= 175) & (s >= 25) & giemsa_color_rule & non_bg_mask
+    stain_ratio = float(np.count_nonzero(valid_stain_mask)) / float(cell_pixel_count)
+
+    if stain_ratio < 0.20:
         return False
 
     return True
@@ -71,7 +83,7 @@ if uploaded_file is not None:
         if not is_valid_blood_smear(image):
             st.error(
                 "⚠️ **Input Rejected:** This image does not match the optical characteristics "
-                "of a Giemsa-stained microscopic blood smear patch. Please upload a valid erythrocyte patch."
+                "of a Giemsa-stained microscopic blood smear. Please upload a valid erythrocyte patch."
             )
         else:
             # Preprocessing
@@ -102,7 +114,7 @@ st.markdown(
     """
     <hr style='margin: 20px 0;'>
     <small>
-      <b>Developers:</b> O.A. Ogunsola & Colleagues<br>
+      <b>Developers:</b> O.A. Ogunsola<br>
       <b>Project:</b> Deep learning point-of-care malaria cell diagnostic tool
     </small>
     """,
