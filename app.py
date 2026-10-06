@@ -78,7 +78,7 @@ st.markdown(
     """
     <hr style='margin: 20px 0;'>
     <small>
-      <b>Developers:</b> O.A. Ogunsola<br>
+      <b>Developer:</b> O.A. Ogunsola<br>
       <b>Project:</b> Deep learning point-of-care malaria cell diagnostic tool
     </small>
     """,
